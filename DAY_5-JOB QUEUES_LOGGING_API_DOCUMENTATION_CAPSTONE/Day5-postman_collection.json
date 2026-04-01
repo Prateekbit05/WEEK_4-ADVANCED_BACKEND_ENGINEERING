@@ -1,0 +1,682 @@
+{
+  "info": {
+    "_postman_id": "day5-job-queues-logging-api-docs",
+    "name": "Day 5 - Job Queues, Logging & API Docs",
+    "description": "Complete Postman collection for Day 5: Job Queues (Bull), Winston Logging, Request Tracing, Swagger API Docs, and PM2 process management.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    { "key": "BASE_URL", "value": "http://localhost:3000", "type": "default" },
+    { "key": "userId",    "value": "", "type": "default" },
+    { "key": "productId", "value": "", "type": "default" },
+    { "key": "emailJobId",  "value": "", "type": "default" },
+    { "key": "reportJobId", "value": "", "type": "default" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "exec": [
+          "// Inject a unique correlation ID into every request",
+          "pm.request.headers.add({",
+          "    key: 'X-Request-ID',",
+          "    value: 'postman-' + Date.now()",
+          "});"
+        ],
+        "type": "text/javascript"
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "exec": [
+          "// Global: response time under 2s",
+          "pm.test('Response time < 2000ms', () => {",
+          "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+          "});",
+          "",
+          "// Global: correlation ID present in response",
+          "pm.test('X-Request-ID header present', () => {",
+          "    pm.response.to.have.header('X-Request-ID');",
+          "});"
+        ],
+        "type": "text/javascript"
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "0 — System",
+      "item": [
+        {
+          "name": "Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is OK', () => {",
+                  "    pm.expect(pm.response.json().status).to.eql('OK');",
+                  "});",
+                  "pm.test('Has uptime', () => {",
+                  "    pm.expect(pm.response.json()).to.have.property('uptime');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{BASE_URL}}/health", "host": ["{{BASE_URL}}"], "path": ["health"] },
+            "description": "Returns server status, uptime, and requestId. Check X-Request-ID in response headers."
+          }
+        },
+        {
+          "name": "Get Swagger JSON Spec",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Is valid OpenAPI spec', () => {",
+                  "    const spec = pm.response.json();",
+                  "    pm.expect(spec).to.have.property('openapi');",
+                  "    pm.expect(spec).to.have.property('paths');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{BASE_URL}}/api-docs.json", "host": ["{{BASE_URL}}"], "path": ["api-docs.json"] },
+            "description": "Returns the full OpenAPI 3.0 specification as JSON."
+          }
+        },
+        {
+          "name": "Open Swagger UI (browser link)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{BASE_URL}}/api-docs", "host": ["{{BASE_URL}}"], "path": ["api-docs"] },
+            "description": "Open this URL in a browser to view the interactive Swagger UI."
+          }
+        },
+        {
+          "name": "404 — Unknown Route",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Has path in response', () => {",
+                  "    pm.expect(pm.response.json()).to.have.property('path');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{BASE_URL}}/non-existent-route", "host": ["{{BASE_URL}}"], "path": ["non-existent-route"] },
+            "description": "Tests the global 404 handler."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1 — Users",
+      "item": [
+        {
+          "name": "Create User ✅",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('User has _id', () => {",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data).to.have.property('_id');",
+                  "    pm.collectionVariables.set('userId', data._id);",
+                  "    console.log('Saved userId:', data._id);",
+                  "});",
+                  "pm.test('Password not in response', () => {",
+                  "    pm.expect(pm.response.json().data).to.not.have.property('password');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"SecurePass123!\",\n  \"role\": \"user\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{BASE_URL}}/api/users", "host": ["{{BASE_URL}}"], "path": ["api", "users"] },
+            "description": "Creates a user. Saves _id to {{userId}} variable automatically."
+          }
+        },
+        {
+          "name": "Create Admin User ✅",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Admin User\",\n  \"email\": \"admin@example.com\",\n  \"password\": \"AdminPass123!\",\n  \"role\": \"admin\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{BASE_URL}}/api/users", "host": ["{{BASE_URL}}"], "path": ["api", "users"] }
+          }
+        },
+        {
+          "name": "Get All Users",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('success is true', () => {",
+                  "    pm.expect(pm.response.json().success).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/users?page=1&limit=10&sort=-createdAt",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "users"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" },
+                { "key": "sort", "value": "-createdAt" },
+                { "key": "search", "value": "", "disabled": true },
+                { "key": "role", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get User by ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Correct user returned', () => {",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data._id).to.eql(pm.collectionVariables.get('userId'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{BASE_URL}}/api/users/{{userId}}", "host": ["{{BASE_URL}}"], "path": ["api", "users", "{{userId}}"] }
+          }
+        },
+        {
+          "name": "Update User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Name updated', () => {",
+                  "    pm.expect(pm.response.json().data.name).to.eql('John Updated');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Updated\",\n  \"email\": \"john.updated@example.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{BASE_URL}}/api/users/{{userId}}", "host": ["{{BASE_URL}}"], "path": ["api", "users", "{{userId}}"] }
+          }
+        },
+        {
+          "name": "Delete User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('success is true', () => pm.expect(pm.response.json().success).to.be.true);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{BASE_URL}}/api/users/{{userId}}", "host": ["{{BASE_URL}}"], "path": ["api", "users", "{{userId}}"] }
+          }
+        },
+        {
+          "name": "🔴 Invalid User (Validation Error)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400 or 422', () => {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400, 422]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\",\n  \"email\": \"not-an-email\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{BASE_URL}}/api/users", "host": ["{{BASE_URL}}"], "path": ["api", "users"] },
+            "description": "Expected: 400/422 validation error"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 — Products",
+      "item": [
+        {
+          "name": "Create Product ✅",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Product has _id', () => {",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data).to.have.property('_id');",
+                  "    pm.collectionVariables.set('productId', data._id);",
+                  "    console.log('Saved productId:', data._id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"MacBook Pro M3\",\n  \"description\": \"14-inch laptop with M3 chip, 16GB RAM\",\n  \"price\": 1999.99,\n  \"category\": \"Electronics\",\n  \"stock\": 25,\n  \"brand\": \"Apple\",\n  \"tags\": [\"laptop\", \"apple\", \"m3\"]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{BASE_URL}}/api/products", "host": ["{{BASE_URL}}"], "path": ["api", "products"] },
+            "description": "Creates product. Saves _id to {{productId}} variable."
+          }
+        },
+        {
+          "name": "Get All Products",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/products?page=1&limit=10&sort=-createdAt",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "products"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" },
+                { "key": "sort", "value": "-createdAt" },
+                { "key": "category", "value": "", "disabled": true },
+                { "key": "minPrice", "value": "", "disabled": true },
+                { "key": "maxPrice", "value": "", "disabled": true },
+                { "key": "search", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Product by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{BASE_URL}}/api/products/{{productId}}", "host": ["{{BASE_URL}}"], "path": ["api", "products", "{{productId}}"] }
+          }
+        },
+        {
+          "name": "Update Product",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"MacBook Pro M3 Max\",\n  \"price\": 2499.99,\n  \"stock\": 15\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{BASE_URL}}/api/products/{{productId}}", "host": ["{{BASE_URL}}"], "path": ["api", "products", "{{productId}}"] }
+          }
+        },
+        {
+          "name": "Delete Product",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{BASE_URL}}/api/products/{{productId}}", "host": ["{{BASE_URL}}"], "path": ["api", "products", "{{productId}}"] }
+          }
+        },
+        {
+          "name": "Filter — Electronics + Price Range",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/products?category=Electronics&minPrice=500&maxPrice=2500&sort=-price",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "products"],
+              "query": [
+                { "key": "category", "value": "Electronics" },
+                { "key": "minPrice", "value": "500" },
+                { "key": "maxPrice", "value": "2500" },
+                { "key": "sort", "value": "-price" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 — Job Queue (Email Worker)",
+      "item": [
+        {
+          "name": "Queue Simple Email ✅",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Job queued - has jobId', () => {",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.success).to.be.true;",
+                  "    pm.expect(res).to.have.property('jobId');",
+                  "    pm.collectionVariables.set('emailJobId', res.jobId);",
+                  "    console.log('Email Job ID:', res.jobId);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to\": \"user@example.com\",\n  \"subject\": \"Welcome!\",\n  \"text\": \"Thank you for joining us!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{BASE_URL}}/api/jobs/send-email", "host": ["{{BASE_URL}}"], "path": ["api", "jobs", "send-email"] },
+            "description": "Queues an email job. Watch email-worker logs: pm2 logs email-worker"
+          }
+        },
+        {
+          "name": "Queue Email with HTML ✅",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to\": \"user@example.com\",\n  \"subject\": \"Welcome to Our Platform\",\n  \"text\": \"Thank you for joining us!\",\n  \"html\": \"<h1>Welcome!</h1><p>Thank you for joining. We're excited to have you!</p>\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{BASE_URL}}/api/jobs/send-email", "host": ["{{BASE_URL}}"], "path": ["api", "jobs", "send-email"] }
+          }
+        },
+        {
+          "name": "Queue Email for Specific User ✅",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to\": \"user@example.com\",\n  \"subject\": \"Your Account Update\",\n  \"text\": \"Your account has been updated successfully.\",\n  \"userId\": \"{{userId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{BASE_URL}}/api/jobs/send-email", "host": ["{{BASE_URL}}"], "path": ["api", "jobs", "send-email"] }
+          }
+        },
+        {
+          "name": "🔴 Missing Email Fields (Validation)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400 or 422', () => {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400, 422]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"No recipient email\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{BASE_URL}}/api/jobs/send-email", "host": ["{{BASE_URL}}"], "path": ["api", "jobs", "send-email"] },
+            "description": "Expected: 400/422 — missing 'to' field"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 — Job Queue (Report Worker)",
+      "item": [
+        {
+          "name": "Generate User Stats Report ✅",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Report job queued', () => {",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.success).to.be.true;",
+                  "    pm.expect(res).to.have.property('jobId');",
+                  "    pm.collectionVariables.set('reportJobId', res.jobId);",
+                  "    console.log('Report Job ID:', res.jobId);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reportType\": \"user-stats\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{BASE_URL}}/api/jobs/generate-report", "host": ["{{BASE_URL}}"], "path": ["api", "jobs", "generate-report"] },
+            "description": "Queues a user stats report. Watch: pm2 logs report-worker"
+          }
+        },
+        {
+          "name": "Generate Product Stats Report ✅",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Report job queued', () => {",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res).to.have.property('jobId');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reportType\": \"product-stats\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{BASE_URL}}/api/jobs/generate-report", "host": ["{{BASE_URL}}"], "path": ["api", "jobs", "generate-report"] }
+          }
+        },
+        {
+          "name": "Generate Report for Specific User ✅",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reportType\": \"user-stats\",\n  \"userId\": \"{{userId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{BASE_URL}}/api/jobs/generate-report", "host": ["{{BASE_URL}}"], "path": ["api", "jobs", "generate-report"] }
+          }
+        },
+        {
+          "name": "🔴 Invalid Report Type (Validation)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 400 or 422', () => {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400, 422]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reportType\": \"invalid-type\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{BASE_URL}}/api/jobs/generate-report", "host": ["{{BASE_URL}}"], "path": ["api", "jobs", "generate-report"] },
+            "description": "Expected: 400/422 — invalid reportType"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 — Request Tracing",
+      "item": [
+        {
+          "name": "Custom Correlation ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Correlation ID echoed back', () => {",
+                  "    const reqId = pm.response.headers.get('X-Request-ID');",
+                  "    pm.expect(reqId).to.exist;",
+                  "    console.log('Correlation ID:', reqId);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Request-ID", "value": "my-custom-trace-001" }
+            ],
+            "url": { "raw": "{{BASE_URL}}/health", "host": ["{{BASE_URL}}"], "path": ["health"] },
+            "description": "Send a custom X-Request-ID and verify it's reflected in the response."
+          }
+        },
+        {
+          "name": "Trace through User Create",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Request ID present', () => {",
+                  "    pm.response.to.have.header('X-Request-ID');",
+                  "});",
+                  "console.log('Trace ID:', pm.response.headers.get('X-Request-ID'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Request-ID", "value": "trace-user-create-001" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Traced User\",\n  \"email\": \"traced@example.com\",\n  \"password\": \"TracePass123!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{BASE_URL}}/api/users", "host": ["{{BASE_URL}}"], "path": ["api", "users"] },
+            "description": "Trace a user creation request end-to-end."
+          }
+        }
+      ]
+    }
+  ]
+}
